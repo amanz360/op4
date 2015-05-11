@@ -92,6 +92,27 @@ void* threadFunc(void * args)
   close(arguments->socketDescriptor);
   status[arguments->index]=FINISHED;
   return NULL;
+
+  /*char* cmd[7];
+  int off, len;
+  off=len=0;
+  sscanf(buffer, "$6s %d %d", cmd, &off, &len)
+  if(strcmp(cmd, "STORE")==0){
+
+  }
+  else if(strcmp(cmd, "READ")==0){
+
+  }
+  else if(strcmp(cmd, "DEL")==0){
+
+  }
+  else if(strcmp(cmd, "DIR")==0){
+
+  }
+  else{
+    //send error message to user
+  }*/
+
 	//reads in client message
 	//checks if it is a valid command, sends back an error message otherwise
 	//if valid read: read(file info)
