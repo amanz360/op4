@@ -6,11 +6,14 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <errno.h>
 #define N_FRAMES 32
 #define FRAME_SIZE 1024
 #define true 1
 #define false 0
 #define N_CLIENTS 10
+#define BUFFER_SIZE 1024
 
 enum {ACTIVE, EMPTY, FINISHED};
 
@@ -117,7 +120,7 @@ void* threadFunc(void * args)
 	//checks if it is a valid command, sends back an error message otherwise
 	//if valid read: read(file info)
 	//if valid store: store(file info)
-	//if valid delete: delete(file info)
+	//if valid delete: del(file info)
 	//if valid dir: dir() <--display all files in directory
 }
 
@@ -128,18 +131,70 @@ char* readFile(char* filename, int offset)
 	//		read the filename specified out of the directory
 	//		and store its contents in a string. return the string either way.
 	//		format: <file-contents>\n
+
+	return "ACK\n";
 }
 
-void storeFile(char* filename, char* contents, int filesize)
+void storeFile(char* filename, int socket, int filesize)
 {
 	//TODO: Make a new file in the storage directory with the passed in filename
 	//		and write 'contents' into it
+
+	int file = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0666);
+	if (errno == EEXIST)
+	{
+		char* message = "ERROR: FILE EXISTS\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+
+	char* buffer = calloc(BUFFER_SIZE, sizeof(char));
+	
+	while(true)
+	{
+		int n, w;
+		n = read(socket, buffer, BUFFER_SIZE);
+		if (n==0) break;
+		if (n<0)
+		{
+			char* fail_message = "ERROR: read failed\n";
+			write(socket,fail_message,strlen(fail_message));
+			return;
+		}
+		w = write(file, buffer, n);
+		if (w<0)
+		{
+			char* fail_message = "ERROR: write failed\n";
+			write(socket,fail_message,strlen(fail_message));
+			return;
+		}
+  	}
+
+	free(buffer);
+	close(socket);
+	close(file);
+
+	char* success_message = "ACK\n";
+	write(socket,success_message,strlen(success_message));
+	return;
 }
 
 char* dir()
 {
 	//TODO: Return a string contaning the number of files in the directory followed by every filename
 	//		format: <number-of-files>\n<filename1>\n<filename2>\netc.\n
+
+	
+}
+
+void del()
+{
+	//TODO: -- delete file <filename> from the storage server
+	//		-- if the file does not exist, return an "ERROR: NO SUCH FILE\n" error
+	//		-- return "ACK\n" if successful
+	//		-- return "ERROR: <error-description>\n" if unsuccessful
+
+	
 }
 
 int openSocket(){
