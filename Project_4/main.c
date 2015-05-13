@@ -8,6 +8,8 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h>
+#include <dirent.h>
 #define N_FRAMES 32
 #define FRAME_SIZE 1024
 #define true 1
@@ -179,22 +181,93 @@ void storeFile(char* filename, int socket, int filesize)
 	return;
 }
 
-char* dir()
-{
-	//TODO: Return a string contaning the number of files in the directory followed by every filename
-	//		format: <number-of-files>\n<filename1>\n<filename2>\netc.\n
-
-	
-}
-
-void del()
+void del(char* filename, int socket)
 {
 	//TODO: -- delete file <filename> from the storage server
 	//		-- if the file does not exist, return an "ERROR: NO SUCH FILE\n" error
 	//		-- return "ACK\n" if successful
 	//		-- return "ERROR: <error-description>\n" if unsuccessful
+	struct stat st;
+	int result = stat(filename, &st);
+	if (result != 0)
+	{
+		char* message = "ERROR: NO SUCH FILE\n";
+		write(socket,message,strlen(message));
+		return;
+	}
 
-	
+	// Check if file is in the page table, if so delete it
+	int i;
+	for (i=0; i<N_FRAMES; i++)
+	{
+		if (strcmp(pageTable[i].filename,filename)==0)
+		{
+			resetEntry(&pageTable[i]);
+		}
+	}
+
+	// Delete file from directory
+	int status = remove(filename);
+	if (status != 0)
+	{
+		char* message = "ERROR: remove file failed\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+	else
+	{
+		char* message = "ACK\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+
+}
+
+void dir(int socket)
+{
+	//TODO: Return a string contaning the number of files in the directory followed by every filename
+	//		format: <number-of-files>\n<filename1>\n<filename2>\netc.\n
+
+	//TODO: Unsure if BUFFER_SIZE gives enough room
+
+	DIR* dir = opendir(".");
+	if (dir == NULL)
+	{
+		char* fail_message = "ERROR: opendir failed\n";
+ 		write(socket,fail_message,strlen(fail_message));
+		return;
+	}
+
+	char filelist[BUFFER_SIZE];
+	int num_files = 0;
+	struct dirent* file;
+	while((file = readdir(dir)) != NULL)
+	{
+		struct stat buf;
+		int rc = lstat(file->d_name, &buf);
+		if (rc==-1)
+		{
+			char* fail_message = "ERROR: lstat failed\n";
+ 			write(socket,fail_message,strlen(fail_message));
+			return;
+		}
+		if (S_ISREG(buf.st_mode))
+		{
+			char tmp[BUFFER_SIZE];
+			strcpy(tmp,"\n");
+			strcat(tmp,file->d_name);
+			strcat(filelist,tmp);
+			num_files++;
+		}
+	}
+
+	char output[BUFFER_SIZE];
+	strcpy(output,(char*)num_files);
+	strcat(output,filelist);
+
+	char* success_message = "ACK\n";
+	write(socket,success_message,strlen(success_message));
+	return;
 }
 
 int openSocket(){
