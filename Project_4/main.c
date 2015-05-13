@@ -8,6 +8,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
+#include <dirent.h>
 #define N_FRAMES 32
 #define FRAME_SIZE 1024
 #define true 1
@@ -252,7 +256,7 @@ void* threadFunc(void * args)
 	//checks if it is a valid command, sends back an error message otherwise
 	//if valid read: read(file info)
 	//if valid store: store(file info)
-	//if valid delete: delete(file info)
+	//if valid delete: del(file info)
 	//if valid dir: dir() <--display all files in directory
 }
 
@@ -263,7 +267,6 @@ void readFile(char* filename, int offset, int length, int socket)
 	//		  read the filename specified out of the directory
 	//		  and store its contents in a string. return the string either way.
   //      Also, if the file was not in server memory, overwrite the least recently used file in server memory with it.
-	//		  format: <file-contents>\n
 
   int found = false;
   int i;
@@ -300,12 +303,133 @@ void storeFile(char* filename, int socket, int filesize)
 {
 	//TODO: Make a new file in the storage directory with the passed in filename
 	//		and write 'contents' into it
+
+	int file = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0666);
+	if (errno == EEXIST)
+	{
+		char* message = "ERROR: FILE EXISTS\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+
+	char* buffer = calloc(BUFFER_SIZE, sizeof(char));
+	
+	while(true)
+	{
+		int n, w;
+		n = read(socket, buffer, BUFFER_SIZE);
+		if (n==0) break;
+		if (n<0)
+		{
+			char* fail_message = "ERROR: read failed\n";
+			write(socket,fail_message,strlen(fail_message));
+			return;
+		}
+		w = write(file, buffer, n);
+		if (w<0)
+		{
+			char* fail_message = "ERROR: write failed\n";
+			write(socket,fail_message,strlen(fail_message));
+			return;
+		}
+  	}
+
+	free(buffer);
+	close(socket);
+	close(file);
+
+	char* success_message = "ACK\n";
+	write(socket,success_message,strlen(success_message));
+	return;
 }
 
-void dir()
+void del(char* filename, int socket)
+{
+	//TODO: -- delete file <filename> from the storage server
+	//		-- if the file does not exist, return an "ERROR: NO SUCH FILE\n" error
+	//		-- return "ACK\n" if successful
+	//		-- return "ERROR: <error-description>\n" if unsuccessful
+	struct stat st;
+	int result = stat(filename, &st);
+	if (result != 0)
+	{
+		char* message = "ERROR: NO SUCH FILE\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+
+	// Check if file is in the page table, if so delete it
+	int i;
+	for (i=0; i<N_FRAMES; i++)
+	{
+		if (strcmp(pageTable[i].filename,filename)==0)
+		{
+			resetEntry(&pageTable[i]);
+		}
+	}
+
+	// Delete file from directory
+	int status = remove(filename);
+	if (status != 0)
+	{
+		char* message = "ERROR: remove file failed\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+	else
+	{
+		char* message = "ACK\n";
+		write(socket,message,strlen(message));
+		return;
+	}
+
+}
+
+void dir(int socket)
 {
 	//TODO: Return a string contaning the number of files in the directory followed by every filename
-	//		  format: <number-of-files>\n<filename1>\n<filename2>\netc.\n
+	//		format: <number-of-files>\n<filename1>\n<filename2>\netc.\n
+
+	//TODO: Unsure if BUFFER_SIZE gives enough room
+
+	DIR* dir = opendir(".");
+	if (dir == NULL)
+	{
+		char* fail_message = "ERROR: opendir failed\n";
+ 		write(socket,fail_message,strlen(fail_message));
+		return;
+	}
+
+	char filelist[BUFFER_SIZE*10];
+	int num_files = 0;
+	struct dirent* file;
+	while((file = readdir(dir)) != NULL)
+	{
+		struct stat buf;
+		int rc = lstat(file->d_name, &buf);
+		if (rc==-1)
+		{
+			char* fail_message = "ERROR: lstat failed\n";
+ 			write(socket,fail_message,strlen(fail_message));
+			return;
+		}
+		if (S_ISREG(buf.st_mode))
+		{
+			char tmp[BUFFER_SIZE];
+			strcpy(tmp,"\n");
+			strcat(tmp,file->d_name);
+			strcat(filelist,tmp);
+			num_files++;
+		}
+	}
+
+	char output[BUFFER_SIZE];
+	strcpy(output,(char*)num_files);
+	strcat(output,filelist);
+
+	char* success_message = "ACK\n";
+	write(socket,success_message,strlen(success_message));
+	return;
 }
 
 int openSocket(){
