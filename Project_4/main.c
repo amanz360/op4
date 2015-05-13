@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -37,6 +38,7 @@ typedef struct{
 
 int openSocket();
 void* threadFunc(void * args);
+void storeFile(char* filename, int socket, int filesize);
 
 //globally define page table and server page memory structure
 PageTableEntry pageTable[N_FRAMES];
@@ -46,6 +48,8 @@ volatile int status[N_CLIENTS];
 
 int main(int argc, char** argv)
 {
+  mkdir(".storage", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+
   int sd=openSocket();
 	struct sockaddr_in client;
   int fromlen = sizeof( client );
@@ -209,12 +213,16 @@ int sgetline(int fd, char ** out)
     return bytesloaded; // number of bytes in the line, not counting the line break
 }
 
+void saveToMemory(char* filename)
+{
+
+}
 
 //handles client connection
 void* threadFunc(void * args)
 {
-  printf("Handling client with socket descriptor: %d", arguments->socketDescriptor);
   threadArgs* arguments = (threadArgs*) args;
+  printf("Handling client with socket descriptor: %d", arguments->socketDescriptor);
   char* buffer;
   int ret;
   while(true)
@@ -226,17 +234,22 @@ void* threadFunc(void * args)
       break; //error / disconnect
     }
     char cmd[7];
+    char filename[BUFFER_SIZE];
     int off, len;
     off=len=0;
-    sscanf(buffer, "%6s %d %d", cmd, &off, &len);
+    sscanf(buffer, "%6s", cmd);
     printf("%s", buffer);
     if(strcmp(cmd, "STORE")==0){
       printf("hit store\n");
+      sscanf(buffer, "%6s %s %d", cmd, filename, &len);
+      storeFile(filename, arguments->socketDescriptor, len);
     }
     else if(strcmp(cmd, "READ")==0){
+      sscanf(buffer, "%6s %s %d %d", cmd, filename, &off, &len);
       printf("hit read\n");
     }
     else if(strcmp(cmd, "DEL")==0){
+      sscanf(buffer, "%6s %s", cmd, filename);
       printf("hit delete\n");
     }
     else if(strcmp(cmd, "DIR")==0){
@@ -304,7 +317,10 @@ void storeFile(char* filename, int socket, int filesize)
 	//TODO: Make a new file in the storage directory with the passed in filename
 	//		and write 'contents' into it
 
-	int file = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0666);
+  char to[strlen(".storage/")+strlen(filename)];
+  strcpy(to, ".storage/");
+  strcat(to, filename);
+	int file = open(to, O_WRONLY | O_CREAT | O_EXCL, 0666);
 	if (errno == EEXIST)
 	{
 		char* message = "ERROR: FILE EXISTS\n";
@@ -313,11 +329,12 @@ void storeFile(char* filename, int socket, int filesize)
 	}
 
 	char* buffer = calloc(BUFFER_SIZE, sizeof(char));
-	
-	while(true)
+	int total = 0;
+	while(true && total < filesize)
 	{
 		int n, w;
 		n = read(socket, buffer, BUFFER_SIZE);
+    total += n;
 		if (n==0) break;
 		if (n<0)
 		{
@@ -332,7 +349,7 @@ void storeFile(char* filename, int socket, int filesize)
 			write(socket,fail_message,strlen(fail_message));
 			return;
 		}
-  	}
+  }
 
 	free(buffer);
 	close(socket);
@@ -424,7 +441,7 @@ void dir(int socket)
 	}
 
 	char output[BUFFER_SIZE];
-	strcpy(output,(char*)num_files);
+  sprintf(output,"%d",num_files);
 	strcat(output,filelist);
 
 	char* success_message = "ACK\n";
